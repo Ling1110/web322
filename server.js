@@ -1,68 +1,121 @@
 /********************************************************************************
-* WEB322 – Assignment 02
+*  WEB322 – Assignment 05
 * 
-* I declare that this assignment is my own work in accordance with Seneca's
-* Academic Integrity Policy:
+*  I declare that this assignment is my own work in accordance with Seneca's
+*  Academic Integrity Policy:
 * 
-* https://www.senecacollege.ca/about/policies/academic-integrity-policy.html
+*  https://www.senecacollege.ca/about/policies/academic-integrity-policy.html
 * 
-* Name: Ling Wang Student ID: 125753228 Date: Oct 16
+*  Name: Ling Wang Student ID: 125753228 Date: Nov 27
+*
+*  Published URL: ___________________________________________________________
 *
 ********************************************************************************/
+
+
 const legoData = require("./modules/legoSets");
-const express = require('express'); 
-const app = express(); 
-const HTTP_PORT = process.env.PORT || 8080; 
+const path = require("path");
 
+const express = require('express');
+const app = express();
 
-legoData.Initialize()
-  .then(() => {
-    app.get('/', (req, res) => {
-      res.sendFile(path.join(__dirname, '/views/home.html'));
-    });
+const HTTP_PORT = process.env.PORT || 8080;
 
-    app.get('/about', (req, res) => {
-      res.sendFile(path.join(__dirname, '/views/about.html'));
-  });
+app.use(express.static('public'));
+app.set('view engine', 'ejs');
 
-    app.get('/lego/sets', (req, res) => {
-      const theme = req.query.theme; // Get the "theme" query parameter
+app.get('/', (req, res) => {
+  res.render("home")
+});
 
-    if (theme) {
-        // If there is a "theme" query parameter, filter Lego data by theme
-        const filteredLegoData = legoData.filter(item => item.theme === theme);
-        if (filteredLegoData.length > 0) {
-            res.json(filteredLegoData);
-        } else {
-            res.status(404).sendFile(path.join(__dirname, '/views/404.html'));
-        }
-    } else {
-        // If there is no "theme" query parameter, respond with all Lego data
-        res.json(legoData);
+app.get('/about', (req, res) => {
+  res.render("about");
+});
+
+app.get("/lego/sets", async (req,res)=>{
+
+  let sets = [];
+
+  try{    
+    if(req.query.theme){
+      sets = await legoData.getSetsByTheme(req.query.theme);
+    }else{
+      sets = await legoData.getAllSets();
     }
-    });
 
-    app.get('/lego/sets/num-demo', (req, res) => {
-      const setNum = req.params.set_num; // Get the set_num from the route parameter
+    res.render("sets", {sets})
+  }catch(err){
+    res.status(404).render("404", {message: err});
+  }
+  
+});
 
-    // Find the Lego set that matches the set_num
-    const legoSet = legoData.find(item => item.set_num === setNum);
+app.get("/lego/sets/:num", async (req,res)=>{
+  try{
+    let set = await legoData.getSetByNum(req.params.num);
+    res.render("set", {set})
+  }catch(err){
+    res.status(404).render("404", {message: err});
+  }
+});
 
-    if (legoSet) {
-        res.json(legoSet);
-    } else {
-        res.status(404).sendFile(path.join(__dirname, '/views/404.html'));
+app.get("/lego/addSet", async (req,res)=>{
+    try{
+      let themeData = await legoData.getAllThemes();
+      res.render("addSet", { themes: themeData });
+    }catch(err){
+      res.status(404).render("404", {message: err});
     }
-    });
-
-    app.use((req, res) => {
-      res.status(404).sendFile(path.join(__dirname, '/views/404.html'));
   });
 
-    app.listen(port, () => {
-      console.log(`Server is running on port ${port}`);
-    });
-  })
-  .catch((error) => {
-    console.error('Failed to initialize Lego data:', error);
+  app.post('/lego/addSet', async (req, res) => {
+    try {
+      await legoSets.addSet(req.body);
+      res.redirect('/lego/sets');
+    } catch (err) {
+      res.render('500', { message: `I'm sorry, but we have encountered the following error: ${err}` });
+    }
   });
+
+  app.get('/lego/editSet/:num', async (req, res) => {
+  
+    try {
+      const [setData, themeData] = await Promise.all([
+        legoData.getSetByNum(req.params.num),
+        legoData.getAllThemes(),
+      ]);
+  
+      res.render('editSet', { themes: themeData, set: setData });
+    } catch (err) {
+      res.status(404).render('404', { message: err });
+    }
+  });
+  
+
+  app.post('/lego/editSet', async (req, res) => {
+    const { set_num, name, year, theme_id } = req.body;
+    try {
+      await legoSets.editSet(set_num, { name, year, theme_id });
+      res.redirect('/lego/sets');
+    } catch (err) {
+      res.render('500', { message: `I'm sorry, but we have encountered the following error: ${err}` });
+    }
+  });
+
+  app.get('/lego/deleteSet/:num', async (req, res) => {
+    const setNum = req.params.num;
+    try {
+      await legoSets.deleteSet(setNum);
+      res.redirect('/lego/sets');
+    } catch (err) {
+      res.render('500', { message: `I'm sorry, but we have encountered the following error: ${err}` });
+    }
+  });
+
+app.use((req, res, next) => {
+  res.status(404).render("404", {message: "I'm sorry, we're unable to find what you're looking for"});
+});
+
+legoData.initialize().then(()=>{
+  app.listen(HTTP_PORT, () => { console.log(`server listening on: ${HTTP_PORT}`) });
+});
